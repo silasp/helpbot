@@ -28,6 +28,7 @@ class learningBot {
     
     private $_db;
     private $_phrase;
+    private $_phrase_id;
     private $_hash;
     private $_hash_id;
     private $_alt_id;
@@ -47,16 +48,25 @@ class learningBot {
         return $this->db()->query($sql);        
     }
     
+    private function _dropTables() {
+        $sql = "DROP TABLE phrases;
+                DROP TABLE hashes;
+                DROP TABLE responses;
+        ";
+        
+        $this->query($sql);
+    }
+    
     private function _createTables() {
         $sql = "CREATE TABLE phrases (
-                phrase_id int unsigned NOT NULL,
+                phrase_id int unsigned NOT NULL AUTO_INCREMENT,
                 phrase varchar(255) NOT NULL,
                 hash_id int unsigned NOT NULL,
                 UNIQUE phrase (phrase),
                 PRIMARY KEY (phrase_id)
                 );
                 CREATE TABLE hashes (
-                hash_id int unsigned NOT NULL,
+                hash_id int unsigned NOT NULL AUTO_INCREMENT,
                 hash varchar(255) NOT NULL,
                 alt_id int unsigned NOT NULL,
                 PRIMARY KEY (hash_id),
@@ -73,20 +83,101 @@ class learningBot {
         $this->query($sql);
     }
     
-    private function _tablesAreThere() {
+    private function _addInitialData() {
+        $this->_alt_id = 1;
+        $fillers = [
+            'Uh huh.',
+            'Right.',
+            'Sure thing.',
+            'Ok.',
+            'Go on.',
+            'Got that.',
+            'I understand.',
+            'What else?',
+            'Yep.',
+            'Sure.',
+            'Righto.',
+            'That\'s interesting.',
+            'Wow! Really?',
+            'Huh?',
+            'Anything else?',
+            'Hmm. Fascinating.',
+            'How can that be?',
+            'Yeah, ok.',
+            'May I ask why that is?',
+            'I\'d love to understand more about that.',
+            'That\'s hard to believe.',
+            'I\'m sorry to hear that',
+            'Can you explain what you mean by that?',
+            'Please explain.',
+            'What do you think?'
+        ];
+        
+        $this->_addPhrases($fillers);
+        
+        $pre_responses = [
+            'I think I know what you need to do.',
+            'Ok, I have a solution for you...',
+            'Right. Let\'s try this...',
+            'Here\'s something you could try...',
+            'Mmm. There\'s only one thing left to do...',
+            'My friend, you have to do this...',
+            'Based on what you have told me, here\'s what I think you should do...',
+            'The most helpful advice I have for you is this...',
+            'I would suggest this...',
+            'Thanks for explaining the situation. Here\'s what I want you to do...'
+        ];
+        
+        $this->_addPhrases($pre_responses);
+
+        $responses = [
+            'Please read the manual.',
+            'Have you considered turning it off and on again?',
+            'Try logging on again, without caps-lock on.',
+            'Can you log that in Zendesk? We will look at it shortly.',
+            'Just use your brain. With a bit of thought, you\'ll be able to figure this one out on your own!',
+            'Go to google.com and type in what you just told me. Then do what it says.',
+            'Unplug everything, then plug it in again, and make sure all the lights are on.',
+            'Just sit tight. We\'re sorting that out as we speak',
+        ];
+        
+        $this->_addPhrases($responses);
+        
+        
+        
+    }
+    
+    private function _addPhrases($phrases) {
+        $this->_alt_id++;
+        
+        foreach ($phrases as $phrase) {
+            $this->_addCatchallPhrase($phrase);
+        }
+    }
+        
+    private function _addCatchallPhrase($phrase) {
+        $this->setPhrase($phrase);
+        $this->_addPhraseToDatabase();
+    }
+    
+    private function _tablesNotThere() {
         $sql = "SHOW TABLES";
         $result = $this->query($sql);        
         return (count($result) == 0);             
     }
     
     public function __construct() {
-        if (!$this->_tablesAreThere()) {
+        // Testing only.
+        // $this->_dropTables();
+        
+        if ($this->_tablesNotThere()) {
             $this->_createTables();
+            $this->_addInitialData();
         }
     }
     
     private function _punctuate($phrase) {
-        $phrase = ucfirst(preg_replace("/ */", ' ', trim($phrase)));
+        $phrase = ucfirst(preg_replace('!\s+!', ' ', trim($phrase)));
         $last_char = substr($phrase, -1);
         if ($last_char != '!' && $last_char != '.' && $last_char != '?') {
             $phrase .= '.';
@@ -97,10 +188,18 @@ class learningBot {
     
     private function _hash($phrase) {
         // Some phrase with tons of "stuff" in it -> somephrasewithtonsofstuffinit
-        return preg_replace("/[^a-z ]/", '', strtolower($phrase));
+        return preg_replace("/[^a-z]/", '', strtolower($phrase));
+    }
+    
+    private function _checkForDbError($sth) {
+        if (!$sth) {
+            echo "\nPDO::errorInfo():\n";
+            print_r($this->db()->errorInfo()); 
+        }
     }
     
     private function _addHashToDatabase() {
+        $this->_getAltIdForHash();        
         $sql = "INSERT IGNORE INTO hashes (hash, alt_id)
                 VALUES (?,?);";
         $binds = [
@@ -108,7 +207,8 @@ class learningBot {
             $this->_alt_id
         ];
         $sth = $this->db()->prepare($sql);
-        $sth->execute($binds);
+        $this->_checkForDbError($sth);
+        $sth->execute($binds);        
     }
     
     private function _getHashId() {
@@ -116,6 +216,7 @@ class learningBot {
                 WHERE hash = ? LIMIT 1";
         $binds = [ $this->_hash ];
         $sth = $this->db()->prepare($sql);
+        $this->_checkForDbError($sth);
         $sth->execute($binds);
         $result = $sth->fetch(PDO::FETCH_ASSOC);
         $this->_hash_id = (int)$result['hash_id'];        
@@ -129,7 +230,8 @@ class learningBot {
             $this->_hash_id
         ];
         $sth = $this->db()->prepare($sql);
-        $sth->execute($binds);
+        $this->_checkForDbError($sth);
+        $sth->execute($binds);        
         $this->_phraseSaved = true;
     }
     
@@ -137,9 +239,7 @@ class learningBot {
         if (!$this->_bot_alt_id) {
             return;
         }
-        
-        $this->_getAltId();        
-        
+                       
         $sql = "INSERT IGNORE INTO responses (call_alt_id, response_alt_id)
                 VALUES (?,?);";
         $binds = [
@@ -147,11 +247,11 @@ class learningBot {
             $this->_alt_id
         ];
         $sth = $this->db()->prepare($sql);
-        $sth->execute($binds);
-        
+        $this->_checkForDbError($sth);
+        $sth->execute($binds);        
     }
     
-    private function _addPhraseToDatabase() {
+    private function _addPhraseToDatabase() {        
         $this->_addHashToDatabase();
         $this->_getHashId();
         $this->_insertPhrase();
@@ -165,21 +265,50 @@ class learningBot {
         return $this;
     }
     
-    private function _getAltId() {
+    private function _getAltIdForResponse() {
+        if (!$this->_alt_id) {
+            return;
+        }
+        $this->_getAltIdFromResponses($this->_alt_id);
+    }
+    
+    private function _getAltIdForHash() {
+        
+        if (!$this->_alt_id) {
         // get from responses
-        $this->_getAltIdFromResponses();
+            $this->_getAltIdFromResponses($this->_bot_alt_id);
+        }
         
         if (!$this->_alt_id) {
             // get from hash
             $this->_getAltIdFromHash();
         }
+        
+        if (!$this->_alt_id) {
+            // get new unique alt id from hash
+            $this->_getNewAltId();
+        }
+        
+        if (!$this->_alt_id) {
+            $this->_alt_id = 2;
+        }
     }
     
-    private function _getAltIdFromResponses() {
-        $sql = "SELECT response_alt_id FROM responses 
-                WHERE call_alt_id = ? LIMIT 1";
-        $binds = [ $this->_bot_alt_id ];
+    private function _getNewAltId() {
+        $sql = "SELECT MAX(alt_id) + 1 AS max_alt_id FROM hashes";        
         $sth = $this->db()->prepare($sql);
+        $this->_checkForDbError($sth);
+        $sth->execute();
+        $result = $sth->fetch(PDO::FETCH_ASSOC);
+        $this->_alt_id = (int)$result['max_alt_id']; 
+    }
+    
+    private function _getAltIdFromResponses( $call_alt_id ) {
+        $sql = "SELECT response_alt_id FROM responses 
+                WHERE call_alt_id = ? ORDER BY RAND() LIMIT 1";
+        $binds = [ $call_alt_id ];
+        $sth = $this->db()->prepare($sql);
+        $this->_checkForDbError($sth);
         $sth->execute($binds);
         $result = $sth->fetch(PDO::FETCH_ASSOC);
         $this->_alt_id = (int)$result['response_alt_id'];         
@@ -190,6 +319,7 @@ class learningBot {
                 WHERE hash = ? LIMIT 1";
         $binds = [ $this->_hash ];
         $sth = $this->db()->prepare($sql);
+        $this->_checkForDbError($sth);
         $sth->execute($binds);
         $result = $sth->fetch(PDO::FETCH_ASSOC);
         $this->_alt_id = (int)$result['alt_id'];        
@@ -198,20 +328,90 @@ class learningBot {
     private function _phraseKnown() {
         if (!$this->_phraseSaved) {
             $this->_addPhraseToDatabase();
-        }        
+        }  
+        $this->_getAltIdForResponse();        
+        
         return $this->_alt_id;
     }
     
     private function _getKnownResponse() {
         
+        
+        
+        $sql = 'SELECT p.phrase, h.alt_id, p.phrase_id FROM hashes h 
+                LEFT JOIN phrases p USING (hash_id) 
+                WHERE p.phrase_id != ?
+                AND h.alt_id = ? 
+                ORDER BY RAND() 
+                LIMIT 1;';
+        
+        return $this->_getResponse($sql);
     }
     
+    private function _getRandomResponse() {
+        $sql = 'SELECT p.phrase, h.alt_id, p.phrase_id FROM hashes h                             
+                LEFT JOIN phrases p USING (hash_id)
+                WHERE p.phrase_id != ?
+                ORDER BY RAND() 
+                LIMIT 1;';
+        
+        return $this->_getResponse($sql);
+    }
+    
+    private function _getResponse($sql) {
+        $sth = $this->db()->prepare($sql);
+        $this->_checkForDbError($sth);
+        if (isset($this->_alt_id)) {
+            $binds = [$this->_phrase_id, $this->_alt_id];
+        }
+        else {
+            $binds = [$this->_phrase_id];
+        }
+        $sth->execute($binds); 
+        $result = $sth->fetch(PDO::FETCH_ASSOC);
+        
+        if (empty($result)) {
+            unset ($this->_alt_id);
+            return $this->_getRandomResponse();
+        }
+            
+        $this->_phrase_id = $result['phrase_id'];
+        $this->_alt_id = $result['alt_id'];        
+        return $result['phrase'];
+    }
+    
+    
     public function getResponse() {
+        if ($this->_bot_alt_id == -1) {
+            return "Welcome to IT Helpdesk! Can I help you?";
+        }
         if ($this->_phraseKnown()) {
             return $this->_getKnownResponse();
         }
         
-        return $this->getRandomResponse();        
+        return $this->_getRandomResponse();        
+    }
+    
+    public function loadFormData() {        
+        $phrase = filter_input(INPUT_POST, 'response', FILTER_SANITIZE_STRING);
+        if ($phrase) {
+            $this->setPhrase($phrase);
+            $this->_bot_alt_id = filter_input(INPUT_POST, 'bot_alt_id', FILTER_SANITIZE_NUMBER_INT);
+            $this->_phrase_id = filter_input(INPUT_POST, 'phrase_id', FILTER_SANITIZE_NUMBER_INT);
+        }
+        else {
+            $this->_bot_alt_id = -1;
+            $this->_phrase_id = -1;
+        }
+        return $this;
+    }
+    
+    public function getAltId() {
+        return $this->_alt_id;
+    }
+    
+    public function getPhraseId() {
+        return $this->_phrase_id;
     }
     
 }

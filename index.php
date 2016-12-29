@@ -2,8 +2,9 @@
 include('bot_lib.php');
 
 $lb = new learningBot();
+$lb->loadFormData();
 
-$bot = bot();
+// $bot = bot();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -29,14 +30,14 @@ $bot = bot();
                         <div class="panel-content">
                             <form method="POST">
                                 <div class="form-group">                            
-                                    <textarea class="form-control" id="chat" rows="6"><?php echo $bot['response']; ?></textarea>              
+                                    <textarea class="form-control" id="chat" rows="6"><?php echo $lb->getResponse(); // $bot['response']; ?></textarea>              
                                 </div>
                                 <div class="form-group">            
-                                    <input type="text" class="form-control" id="message" placeholder="Type your message here">            
+                                    <input type="text" class="form-control" id="message" name="response" placeholder="Type your message here">            
                                 </div> 
-                                <input type="hidden" name="step" value="<?php echo $bot['step']; ?>">
-                                <input type="hidden" name="total" value="<?php echo $bot['total']; ?>">
-                                <input type="hidden" name="filler_id" value="<?php echo $filler_id; ?>">
+                                <input type="hidden" name="step" value="<?php // echo $bot['step']; ?>">
+                                <input type="hidden" name="phrase_id" value="<?php echo $lb->getPhraseId(); ?>">
+                                <input type="hidden" name="bot_alt_id" value="<?php echo $lb->getAltId(); ?>">
                                 <button type="submit" class="btn btn-primary">Submit</button>
                                 <button type="submit" class="btn btn-primary" name="reset" value="1">Start Over</button>
                                 <button type="button" class="btn btn-default" data-toggle="collapse" data-target="#treats">Don't click this</button>
